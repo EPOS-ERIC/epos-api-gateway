@@ -3,6 +3,7 @@
 import connexion
 
 import logging
+logger = logging.getLogger(__name__)
 from urllib import request
 import json
 import random
@@ -51,7 +52,7 @@ def getenv_split(name: str, sep: str = ":") -> tuple[bool, bool] | None:
     try:
         first, second = raw.split(sep, 1)
     except ValueError:  # not exactly two parts
-        logging.warning(f"{name} must contain exactly two values separated by {sep!r}, "
+        logger.error(f"{name} must contain exactly two values separated by {sep!r}, "
             f"e.g. 'true:false'; got {raw!r}. Considering it as not set")
         return None
 
@@ -150,7 +151,6 @@ def manipulate_and_generate_yaml(json_loaded, filename, service, host, isauth: b
     json_loaded['servers'][0]['url'] = 'http://localhost:5000/api/v1'
 
     for key, value in list(json_loaded['paths'].items()):
-        print(key)
         #cleanup paths
         if 'head' in json_loaded['paths'][key]: json_loaded['paths'][key].pop('head')
         #if 'options' in json_loaded['paths'][key]: json_loaded['paths'][key].pop('options')
@@ -259,7 +259,6 @@ def load_configuration():
 
     if converter_api_setup :
         try:
-            logging.warning(routing_request.CONVERTER_HOST)
             item = request.urlopen(routing_request.CONVERTER_HOST+routing_request.CONVERTER_SERVICE+"/api-docs")
             json_loaded = json.loads(item.read())
             manipulate_and_generate_yaml(
@@ -501,6 +500,11 @@ def main():
         'body': CustomRequestBodyValidator,
         'response': ResponseValidator,
     }
+
+    logging.basicConfig(
+        level=getattr(logging, os.getenv('LOG_LEVEL', 'WARNING').upper()),
+        format='%(asctime)s - %(levelname)s - %(message)s'
+    )
 
     load_configuration()
 
