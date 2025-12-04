@@ -1,6 +1,8 @@
 import requests
-from flask import request, Response
+from flask import Response
 import os
+import logging
+logger = logging.getLogger(__name__)
 
 def scientific_example_fetcher():
     scientific_base_url = os.getenv("SCIENTIFIC_BASE_URL")
@@ -13,4 +15,5 @@ def scientific_example_fetcher():
         r = requests.get(url)
         return Response(r.content, status=r.status_code, content_type=r.headers.get("Content-Type"))
     except Exception as e:
+        logger.error(f"Fetch failed: {e}")
         return Response(str(e), status=500)

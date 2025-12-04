@@ -1,5 +1,6 @@
 import connexion
 import logging
+logger = logging.getLogger(__name__)
 import urllib
 import json
 import os
@@ -48,20 +49,24 @@ def call_redirect(query, isauthrequest, server, only_admin: bool = False):
             auth_response = ""
             auth_response = routing_request.authorizationCall(connexion.request.headers['Authorization'])
             if auth_response.status_code == 401 :
-                print("Wrong or expired auth token provided for search endpoints, skipping auth")
+                logger.info("Wrong or expired auth token provided for search endpoints, skipping auth")
             else:
                 json_payload = json.loads(auth_response.response[0])
                 query += "&userId=" + json_payload['eduPersonUniqueId']
         except:
-            print("No auth token provided for search endpoints, skipping auth")
+            logger.info("No auth token provided for search endpoints, skipping auth")
 
 
-    return routing_request.routingrequest(server,
-                            connexion.request.method, 
-                            connexion.request.headers, 
-                            query,
-                            connexion.request.get_data(),
-                            connexion.request)
+    try:
+        return routing_request.routingrequest(server,
+                                connexion.request.method,
+                                connexion.request.headers,
+                                query,
+                                connexion.request.get_data(),
+                                connexion.request)
+    except Exception as e:
+        logger.error(f"Routing request failed: {e}")
+        raise
 
 def tcsconnections_ogc_execute_get_using_get(instance_id=None):  # noqa: E501
     """queries on external services endpoint
@@ -78,15 +83,8 @@ def tcsconnections_ogc_execute_get_using_get(instance_id=None):  # noqa: E501
     query = urllib.parse.unquote(query)
 
     server = routing_request.EXTERNAL_ACCESS_HOST+routing_request.EXTERNAL_SERVICE+connexion.request.base_url.split('/api/v1')[1]
-    
-    logging.warning('Executing the actual request with the following parameters: ')
-    logging.warning('[server]:\n'+str(server)+'\n')
-    logging.warning('[method]:\n'+str(connexion.request.method)+'\n')
-    logging.warning('[headers]:\n'+str(connexion.request.headers)+'\n')
-    logging.warning('[query]:\n'+str(query)+'\n')
-    logging.warning('[body]:\n'+str(connexion.request.form)+'\n')
 
-    logging.warning(f'{server}?{query}')    
+    logger.info(f'Executing request to {server}')    
 
     #resp = requests.get(f'{server}?{query}', data=connexion.request.form, headers=connexion.request.headers, allow_redirects=False)
 

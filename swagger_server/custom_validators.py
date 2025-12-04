@@ -8,6 +8,7 @@ from connexion.exceptions import ExtraParameterProblem
 from connexion.decorators.validation import ParameterValidator, RequestBodyValidator
 from typing import Dict, Any
 import logging
+logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 
@@ -122,14 +123,9 @@ class CustomRequestBodyValidator(RequestBodyValidator):
         return wrapper
 
     def validate_schema(self, data, url):
-        logging.error(data)
-        logging.error(type(data))
-
         copy_data = data
 
         copy_data = delete_none(copy_data)
-        logging.error(copy_data)
-        logging.error(data)
 
         data = copy_data
 
@@ -140,7 +136,7 @@ class CustomRequestBodyValidator(RequestBodyValidator):
             self.validator.validate(data)
         except ValidationError as exception:
             description = f'Validation error. Attribute "{exception.validator_value}" return this error: "{exception.message}"'
-            print(description)
+            logger.warning(f"Validation description {description}")
             return error_response(Error(
                 status=400,
                 description=description
