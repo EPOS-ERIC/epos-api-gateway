@@ -1,4 +1,17 @@
-name: "release, push to central and mirror"
+# Workflow: Release, Push to GitHub Container Registry and Mirror to GitLab
+#
+# Triggers:
+#   - Push to main branch: Runs security scans, builds and pushes Docker image with SHA tag only
+#   - Push of a tag: Runs security scans, builds and pushes Docker image with version tag, latest tag, and SHA tag
+#   - Pull request to main: Runs security scans only (no build/push)
+#
+# Jobs:
+#   1. security-scan: Runs CodeQL analysis for Python code
+#   2. dependency-check: Scans dependencies for known vulnerabilities using pip-audit
+#   3. build: Builds Python package and Docker image, pushes to GitHub Container Registry (public)
+#   4. mirror: Mirrors the repository to GitLab
+
+name: "release, push to ghcr.io and mirror"
 
 on:
   push:
@@ -12,8 +25,7 @@ on:
 
 env:
   VERSION: ${{ github.ref_type == 'tag' && github.ref_name || 'latest' }}
-  REGISTRY: docker.io
-  IMAGE_NAME: epos/${{ github.event.repository.name }}
+  REGISTRY: ghcr.io
   PYTHON_VERSION: '3.12'
 
 jobs:
@@ -38,6 +50,20 @@ jobs:
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v4
 
+      # Additional Python-specific security scanning with Bandit
+      - name: Install Bandit
+        run: pip install bandit[sarif]
+
+      - name: Run Bandit security scan
+        run: bandit -r . -f sarif -o bandit-results.sarif --exit-zero
+        continue-on-error: true
+
+      - name: Upload Bandit results
+        uses: github/codeql-action/upload-sarif@v4
+        if: always() && hashFiles('bandit-results.sarif') != ''
+        with:
+          sarif_file: bandit-results.sarif
+
   dependency-check:
     runs-on: ubuntu-latest
     permissions:
@@ -50,40 +76,33 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
-          cache: 'pip'
 
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
+          pip install pip-audit safety
           pip install -r requirements.txt
-          pip install bandit[sarif] safety pip-audit
 
-      - name: Run Bandit Security Scanner
-        run: |
-          bandit -r . -f sarif -o bandit-results.sarif --exit-zero \
-            --exclude "./.git,./venv,./.venv,./tests,./test" || true
-
-      - name: Upload Bandit results
-        uses: github/codeql-action/upload-sarif@v4
-        if: always() && hashFiles('bandit-results.sarif') != ''
-        with:
-          sarif_file: bandit-results.sarif
-
-      - name: Run pip-audit (Dependency Vulnerabilities)
+      - name: Run pip-audit
         run: |
           pip-audit --format=json --output=pip-audit-results.json || true
-          cat pip-audit-results.json
+          pip-audit --strict --desc on
         continue-on-error: true
 
-      - name: Run Safety Check
-        run: |
-          safety check --full-report || true
+      - name: Run Safety check
+        run: safety check --full-report
         continue-on-error: true
+
+      - name: Upload dependency check results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: dependency-check-results
+          path: pip-audit-results.json
+          retention-days: 30
 
   test:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
     steps:
       - uses: actions/checkout@v4
 
@@ -91,32 +110,22 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
-          cache: 'pip'
 
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          pip install pytest pytest-cov flake8
-
-      - name: Lint with flake8
-        run: |
-          # Stop build on syntax errors or undefined names
-          flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics \
-            --exclude=.git,__pycache__,venv,.venv
-          # Warnings (non-blocking)
-          flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics \
-            --exclude=.git,__pycache__,venv,.venv
-        continue-on-error: true
+          pip install pytest pytest-cov
 
       - name: Run tests
-        run: |
-          if [ -d "tests" ] || [ -d "test" ]; then
-            pytest --cov=swagger_server --cov-report=xml -v || true
-          else
-            echo "No tests directory found, skipping tests"
-          fi
-        continue-on-error: true
+        run: pytest --cov=. --cov-report=xml
+
+      - name: Upload coverage reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage.xml
+          retention-days: 7
 
   build:
     runs-on: ubuntu-latest
@@ -134,25 +143,59 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      # Docker/OCI image names must be lowercase
+      - name: Set lowercase image name
+        id: image-name
+        run: |
+          echo "name=$(echo 'ghcr.io/${{ github.repository }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_OUTPUT
+          echo "owner=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_OUTPUT
+          echo "repo=$(echo '${{ github.event.repository.name }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_OUTPUT
+
+      - name: Install build dependencies
+        run: |
+          python -m pip install --upgrade pip build
+          pip install -r requirements.txt
+
+      - name: Build Python package
+        run: python -m build
+
+      - name: Upload Python artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: python-artifact
+          path: dist/
+          retention-days: 7
+
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Login to DockerHub
+      - name: Login to GitHub Container Registry
         uses: docker/login-action@v3
         with:
-          username: ${{ secrets.DOCKER_USERNAME }}
-          password: ${{ secrets.DOCKER_PASSWORD }}
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
+      # Tagging strategy:
+      # - On tag push: version tag (e.g., v1.0.0), latest tag, and commit SHA
+      # - On main push: commit SHA only
       - name: Extract Docker metadata
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.IMAGE_NAME }}
+          images: ${{ steps.image-name.outputs.name }}
           tags: |
-            type=raw,value=${{ env.VERSION }}
+            type=raw,value=${{ env.VERSION }},enable=${{ github.ref_type == 'tag' }}
+            type=raw,value=latest,enable=${{ github.ref_type == 'tag' }}
+            type=ref,event=branch
             type=sha,prefix=
 
       - name: Build and Push with Attestations
@@ -161,6 +204,7 @@ jobs:
         with:
           context: .
           push: true
+          platforms: linux/amd64,linux/arm64
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           sbom: true
@@ -171,7 +215,7 @@ jobs:
       - name: Scan Docker image with Trivy
         uses: aquasecurity/trivy-action@master
         with:
-          image-ref: '${{ env.IMAGE_NAME }}:${{ env.VERSION }}'
+          image-ref: '${{ steps.image-name.outputs.name }}@${{ steps.build-push.outputs.digest }}'
           format: 'sarif'
           output: 'trivy-results.sarif'
           severity: 'CRITICAL,HIGH'
@@ -182,12 +226,18 @@ jobs:
         with:
           sarif_file: 'trivy-results.sarif'
 
+      - name: Login to DockerHub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
       - name: Run Docker Scout
         uses: docker/scout-action@v1
         if: github.ref_type == 'tag'
         with:
           command: cves,recommendations
-          image: ${{ env.IMAGE_NAME }}:${{ env.VERSION }}
+          image: ${{ steps.image-name.outputs.name }}:${{ env.VERSION }}
           only-severities: critical,high
           exit-code: false
 
