@@ -65,50 +65,55 @@ def authorizationJWT(bearer_token):
 def routingrequest(server, method, headers, query, body, request):
     logger.info(f'Routing request to {server} with method {method}')    
 
-    if method == 'GET' :
-        try:
+def routingrequest(server, method, headers, query, body, request):
+    logger.info(f'Routing request to {server} with method {method}')    
+
+    try:
+        if method == 'GET':
             with requests.get(f'{server}?{query}', data=body, headers=headers, allow_redirects=False, stream=True) as resp:
                 excluded_headers = ['content-encoding', 'content-length', 'transfer-encoding', 'connection']
-                headers = [(name, value) for (name, value) in  resp.raw.headers.items() if name.lower() not in excluded_headers]
-                try:
-                    return (json.loads(resp.content), resp.status_code, headers)
-                except Exception as e:
-                    logger.error(f"Exception parsing response content: {e}")
-                    return (json.loads("{}"), resp.status_code, headers)
-        except Exception as e:
-            logger.error(f"Downstream request failed: {e}")
-            raise
-            #if len(resp.content) == 0:
-            #    logging.warning("Empty body for the request")
-            #    return (json.loads("{}"), resp.status_code, headers)
-            #return (resp.content, resp.status_code, headers)
-        #resp = requests.get(f'{server}?{query}', data=body, headers=headers, allow_redirects=False)
-    try:
-        if method == 'POST' :
+                headers = [(name, value) for (name, value) in resp.raw.headers.items() if name.lower() not in excluded_headers]
+                logger.warning(resp.content)
+                logger.warning(str(len(resp.content)))
+                content_type = resp.headers.get('content-type', '')
+                if content_type.startswith('application/json'):
+                    try:
+                        return (json.loads(resp.content), resp.status_code, headers)
+                    except Exception as e:
+                        logger.warning(f"Exception parsing response content: {e}")
+                        return (json.loads("{}"), resp.status_code, headers)
+                else:
+                    return Response(resp.content, resp.status_code, headers)
+        elif method == 'POST':
             if request.is_json:
                 resp = requests.post(f'{server}?{query}', json=request.json, headers=headers, allow_redirects=False)
             else:
                 resp = requests.post(f'{server}?{query}', data=body, headers=headers, allow_redirects=False)
-        elif method == 'PUT' :
+        elif method == 'PUT':
             if request.is_json:
                 resp = requests.put(f'{server}?{query}', json=request.json, headers=headers, allow_redirects=False)
             else:
                 resp = requests.put(f'{server}?{query}', data=body, headers=headers, allow_redirects=False)
-        elif method == 'DELETE' :
+        elif method == 'DELETE':
             resp = requests.delete(f'{server}?{query}', data=body, headers=headers, allow_redirects=False)
 
         excluded_headers = ['content-encoding', 'content-length', 'transfer-encoding', 'connection']
-        headers = [(name, value) for (name, value) in  resp.raw.headers.items() if name.lower() not in excluded_headers]
+        headers = [(name, value) for (name, value) in resp.raw.headers.items() if name.lower() not in excluded_headers]
 
         logger.info(f"Response status: {resp.status_code}, content-type: {resp.headers.get('content-type')}")
 
-        #if resp.status_code == 302:
-        #    return (json.loads("{}"), resp.status_code, headers)
-
-        if len(resp.content) == 0:
-            logger.debug("Empty response body")
-            return (json.loads("{}"), resp.status_code, headers)
-        return (json.loads(resp.content), resp.status_code, headers)
+        content_type = resp.headers.get('content-type', '')
+        if content_type.startswith('application/json'):
+            if len(resp.content) == 0:
+                logger.warning("Empty body for the request")
+                return (json.loads("{}"), resp.status_code, headers)
+            try:
+                return (json.loads(resp.content), resp.status_code, headers)
+            except Exception as e:
+                logger.error(f"Exception parsing response content: {e}")
+                return (json.loads("{}"), resp.status_code, headers)
+        else:
+            return Response(resp.content, resp.status_code, headers)
     except Exception as e:
         logger.error(f"Downstream request failed: {e}")
         raise
