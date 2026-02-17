@@ -275,6 +275,8 @@ def manipulate_and_generate_yaml(json_loaded, filename, service, host, isauth: b
                         True,
                         True,
                     )
+                    json_loaded['paths'][key]['delete']['operationId'] = randomname
+                    json_loaded['paths'][key]['delete']['x-openapi-router-controller'] = "swagger_server.controllers.dynamic_controller"
                 else:
                     add_method_to_dynamic_controller(randomname,host,service,isauth, only_admin)
                     json_loaded['paths'][key]['delete']['operationId'] = randomname
