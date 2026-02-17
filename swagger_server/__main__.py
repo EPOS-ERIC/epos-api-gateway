@@ -190,6 +190,14 @@ def manipulate_and_generate_yaml(json_loaded, filename, service, host, isauth: b
                             monitoring_api_setup[0],
                             monitoring_api_setup[1],
                         )
+                    elif "configurations" in key:
+                        add_method_to_dynamic_controller(
+                            randomname,
+                            host,
+                            service,
+                            True,
+                            True,
+                        )
                     else:
                         if 'get' in value and 'parameters' in value['get'] and isinstance(value['get']['parameters'], list) and len(value['get']['parameters']) > 0 and 'in' in value['get']['parameters'][0] and 'name' in value['get']['parameters'][0] and value['get']['parameters'][0]['in'] == 'path':
                             add_method_to_dynamic_controller(randomname, host, service, isauth, only_admin)
@@ -223,6 +231,15 @@ def manipulate_and_generate_yaml(json_loaded, filename, service, host, isauth: b
                     path = "/submit_feedback"
                     json_loaded['paths'][path]['post']['operationId'] = "submit_feedback"
                     json_loaded['paths'][path]['post']['x-openapi-router-controller'] = "swagger_server.controllers.feedback_controller"
+                elif "configurations" in key:
+                    randomname = ''.join(random.choice(string.ascii_lowercase) for _ in range(30))
+                    add_method_to_dynamic_controller(
+                        randomname,
+                        host,
+                        service,
+                        True,
+                        True,
+                    )
                 else:
                     randomname = ''.join(random.choice(string.ascii_lowercase) for _ in range(30))
                     add_method_to_dynamic_controller(randomname,host,service,isauth, only_admin)
@@ -232,7 +249,15 @@ def manipulate_and_generate_yaml(json_loaded, filename, service, host, isauth: b
                         json_loaded['paths'][key]['post'].update(security_dict)
             if 'put' in json_loaded['paths'][key]:
                 randomname = ''.join(random.choice(string.ascii_lowercase) for _ in range(30))
-                if 'put' in value and 'parameters' in value['put'] and isinstance(value['put']['parameters'],list) and len(value['put']['parameters']) > 0 and 'in' in value['put']['parameters'][0] and 'name' in value['put']['parameters'][0] and value['put']['parameters'][0]['in'] == 'path':
+                if "configurations" in key:
+                    add_method_to_dynamic_controller(
+                        randomname,
+                        host,
+                        service,
+                        True,
+                        True,
+                    )
+                elif 'put' in value and 'parameters' in value['put'] and isinstance(value['put']['parameters'],list) and len(value['put']['parameters']) > 0 and 'in' in value['put']['parameters'][0] and 'name' in value['put']['parameters'][0] and value['put']['parameters'][0]['in'] == 'path':
                     add_method_to_dynamic_controller(randomname, host, service, isauth, only_admin)
                 else:
                     add_method_to_dynamic_controller(randomname, host, service, isauth, only_admin)
@@ -242,11 +267,20 @@ def manipulate_and_generate_yaml(json_loaded, filename, service, host, isauth: b
                     json_loaded['paths'][key]['put'].update(security_dict)
             if 'delete' in json_loaded['paths'][key]:
                 randomname = ''.join(random.choice(string.ascii_lowercase) for _ in range(30))
-                add_method_to_dynamic_controller(randomname,host,service,isauth, only_admin)
-                json_loaded['paths'][key]['delete']['operationId'] = randomname
-                json_loaded['paths'][key]['delete']['x-openapi-router-controller'] = "swagger_server.controllers.dynamic_controller"
-                if isauth :
-                    json_loaded['paths'][key]['delete'].update(security_dict)
+                if "configurations" in key:
+                    add_method_to_dynamic_controller(
+                        randomname,
+                        host,
+                        service,
+                        True,
+                        True,
+                    )
+                else:
+                    add_method_to_dynamic_controller(randomname,host,service,isauth, only_admin)
+                    json_loaded['paths'][key]['delete']['operationId'] = randomname
+                    json_loaded['paths'][key]['delete']['x-openapi-router-controller'] = "swagger_server.controllers.dynamic_controller"
+                    if isauth :
+                        json_loaded['paths'][key]['delete'].update(security_dict)
 
     with open(filename, 'w') as file:
         documents = yaml.dump(json_loaded, file)
