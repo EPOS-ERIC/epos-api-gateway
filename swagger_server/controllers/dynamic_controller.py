@@ -56,6 +56,18 @@ def call_redirect(query, isauthrequest, server, only_admin: bool = False):
         except:
             logger.info("No auth token provided for search endpoints, skipping auth")
 
+    if "details" in connexion.request.path:
+        try:
+            auth_response = ""
+            auth_response = routing_request.authorizationCall(connexion.request.headers['Authorization'])
+            if auth_response.status_code == 401 :
+                logger.info("Wrong or expired auth token provided for details endpoints, skipping auth")
+            else:
+                json_payload = json.loads(auth_response.response[0])
+                query += "&userId=" + json_payload['eduPersonUniqueId']
+        except:
+            logger.info("No auth token provided for details endpoints, skipping auth")
+
 
     try:
         return routing_request.routingrequest(server,
