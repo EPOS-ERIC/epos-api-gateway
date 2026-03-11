@@ -65,9 +65,6 @@ def authorizationJWT(bearer_token):
 def routingrequest(server, method, headers, query, body, request):
     logger.info(f'Routing request to {server} with method {method}')    
 
-def routingrequest(server, method, headers, query, body, request):
-    logger.info(f'Routing request to {server} with method {method}')    
-
     try:
         if method == 'GET':
             with requests.get(f'{server}?{query}', data=body, headers=headers, allow_redirects=False, stream=True) as resp:
