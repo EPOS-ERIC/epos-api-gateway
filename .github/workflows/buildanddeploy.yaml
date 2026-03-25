@@ -1,0 +1,232 @@
+# Workflow: Release, Push to GitHub Container Registry and Mirror to GitLab
+#
+# Triggers:
+#   - Push to main branch: Runs security scans, builds and pushes Docker image with SHA tag only
+#   - Push of a tag: Runs security scans, builds and pushes Docker image with version tag, latest tag, and SHA tag
+#   - Pull request to main: Runs security scans only (no build/push)
+#
+# Jobs:
+#   1. security-scan: Runs CodeQL analysis for Python code
+#   2. dependency-check: Scans dependencies for known vulnerabilities using pip-audit
+#   3. build: Builds Python package and Docker image, pushes to GitHub Container Registry (public)
+#   4. mirror: Mirrors the repository to GitLab
+
+name: "release, push to ghcr.io and mirror"
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - '*'
+  pull_request:
+    branches:
+      - main
+
+env:
+  VERSION: ${{ github.ref_type == 'tag' && github.ref_name || 'latest' }}
+  REGISTRY: ghcr.io
+  PYTHON_VERSION: '3.12'
+
+jobs:
+  security-scan:
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v4
+        with:
+          languages: python
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v4
+
+      # Additional Python-specific security scanning with Bandit
+      - name: Install Bandit
+        run: pip install bandit[sarif]
+
+      - name: Run Bandit security scan
+        run: bandit -r . -f sarif -o bandit-results.sarif --exit-zero
+        continue-on-error: true
+
+      - name: Upload Bandit results
+        uses: github/codeql-action/upload-sarif@v4
+        if: always() && hashFiles('bandit-results.sarif') != ''
+        with:
+          sarif_file: bandit-results.sarif
+
+  dependency-check:
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pip-audit safety
+          pip install -r requirements.txt
+
+      - name: Run pip-audit
+        run: |
+          pip-audit --format=json --output=pip-audit-results.json || true
+          pip-audit --strict --desc on
+        continue-on-error: true
+
+      - name: Run Safety check
+        run: safety check --full-report
+        continue-on-error: true
+
+      - name: Upload dependency check results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: dependency-check-results
+          path: pip-audit-results.json
+          retention-days: 30
+          
+  build:
+    runs-on: ubuntu-latest
+    needs: [security-scan, dependency-check]
+    if: github.event_name == 'push'
+    permissions:
+      contents: read
+      packages: write
+      security-events: write
+      id-token: write
+      attestations: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      # Docker/OCI image names must be lowercase
+      - name: Set lowercase image name
+        id: image-name
+        run: |
+          echo "name=$(echo 'ghcr.io/${{ github.repository }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_OUTPUT
+          echo "owner=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_OUTPUT
+          echo "repo=$(echo '${{ github.event.repository.name }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_OUTPUT
+
+      - name: Install build dependencies
+        run: |
+          python -m pip install --upgrade pip build
+          pip install -r requirements.txt
+
+      - name: Build Python package
+        run: python -m build
+
+      - name: Upload Python artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: python-artifact
+          path: dist/
+          retention-days: 7
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Tagging strategy:
+      # - On tag push: version tag (e.g., v1.0.0), latest tag, and commit SHA
+      # - On main push: commit SHA only
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ steps.image-name.outputs.name }}
+          tags: |
+            type=raw,value=${{ env.VERSION }},enable=${{ github.ref_type == 'tag' }}
+            type=raw,value=latest,enable=${{ github.ref_type == 'tag' }}
+            type=ref,event=branch
+            type=sha,prefix=
+
+      - name: Build and Push with Attestations
+        id: build-push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          platforms: linux/amd64,linux/arm64
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          sbom: true
+          provenance: mode=max
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Scan Docker image with Trivy
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: '${{ steps.image-name.outputs.name }}@${{ steps.build-push.outputs.digest }}'
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+          severity: 'CRITICAL,HIGH'
+
+      - name: Upload Trivy scan results
+        uses: github/codeql-action/upload-sarif@v4
+        if: always() && hashFiles('trivy-results.sarif') != ''
+        with:
+          sarif_file: 'trivy-results.sarif'
+
+      - name: Login to DockerHub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Run Docker Scout
+        uses: docker/scout-action@v1
+        if: github.ref_type == 'tag'
+        with:
+          command: cves,recommendations
+          image: ${{ steps.image-name.outputs.name }}:${{ env.VERSION }}
+          only-severities: critical,high
+          exit-code: false
+
+  mirror:
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.event_name == 'push'
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Mirror to GitLab
+        run: |
+          git remote add gitlab https://github:${{ secrets.GITLAB }}@epos-ci.brgm.fr/epos/${{ github.event.repository.name }}.git
+          git push --force gitlab ${{ github.ref }}
