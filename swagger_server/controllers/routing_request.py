@@ -70,8 +70,6 @@ def routingrequest(server, method, headers, query, body, request):
             with requests.get(f'{server}?{query}', data=body, headers=headers, allow_redirects=False, stream=True) as resp:
                 excluded_headers = ['content-encoding', 'content-length', 'transfer-encoding', 'connection']
                 headers = [(name, value) for (name, value) in resp.raw.headers.items() if name.lower() not in excluded_headers]
-                logger.warning(resp.content)
-                logger.warning(str(len(resp.content)))
                 content_type = resp.headers.get('content-type', '')
                 if content_type.startswith('application/json'):
                     try:
