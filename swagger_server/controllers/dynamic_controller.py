@@ -15,6 +15,11 @@ from swagger_server.controllers import routing_request
 def call_redirect(query, isauthrequest, server, only_admin: bool = False):
     query = query.decode("utf-8")
     query = urllib.parse.unquote(query)
+    query_parameters = [
+        (key, value)
+        for key, value in urllib.parse.parse_qsl(query, keep_blank_values=True)
+        if key.lower() != "userid"
+    ]
 
     if isauthrequest :
         try:
@@ -29,8 +34,13 @@ def call_redirect(query, isauthrequest, server, only_admin: bool = False):
             else:
                 if "monitoring" not in connexion.request.path:
                     json_payload = json.loads(auth_response.response[0])
-                    query += "&userId=" + json_payload['eduPersonUniqueId']
-                    query += "&email=" + json_payload['email'] + "&firstName=" + json_payload['firstname'] + "&lastName=" + json_payload['lastName']
+                    query_parameters.extend([
+                        ("userId", json_payload['eduPersonUniqueId']),
+                        ("email", json_payload['email']),
+                        ("firstName", json_payload['firstname']),
+                        ("lastName", json_payload['lastName']),
+                    ])
+                    query = urllib.parse.urlencode(query_parameters, doseq=True)
 
                     if only_admin:
                         isAdmin = routing_request.isAdmin(connexion.request.headers['Authorization'], query)
@@ -39,7 +49,12 @@ def call_redirect(query, isauthrequest, server, only_admin: bool = False):
 
                 if "sender" in connexion.request.path:
                     json_payload = json.loads(auth_response.response[0])
-                    query += "&userEmail=" + json_payload['email'] + "&firstName=" + json_payload['firstname'] + "&lastName=" + json_payload['lastName']
+                    query_parameters.extend([
+                        ("userEmail", json_payload['email']),
+                        ("firstName", json_payload['firstname']),
+                        ("lastName", json_payload['lastName']),
+                    ])
+                    query = urllib.parse.urlencode(query_parameters, doseq=True)
 
         except:
             return ("No authentication token provided or error while checking it...", 401, connexion.request.headers.items())
@@ -52,7 +67,8 @@ def call_redirect(query, isauthrequest, server, only_admin: bool = False):
                 logger.info("Wrong or expired auth token provided for search endpoints, skipping auth")
             else:
                 json_payload = json.loads(auth_response.response[0])
-                query += "&userId=" + json_payload['eduPersonUniqueId']
+                query_parameters.append(("userId", json_payload['eduPersonUniqueId']))
+                query = urllib.parse.urlencode(query_parameters, doseq=True)
         except:
             logger.info("No auth token provided for search endpoints, skipping auth")
 
@@ -64,7 +80,8 @@ def call_redirect(query, isauthrequest, server, only_admin: bool = False):
                 logger.info("Wrong or expired auth token provided for details endpoints, skipping auth")
             else:
                 json_payload = json.loads(auth_response.response[0])
-                query += "&userId=" + json_payload['eduPersonUniqueId']
+                query_parameters.append(("userId", json_payload['eduPersonUniqueId']))
+                query = urllib.parse.urlencode(query_parameters, doseq=True)
         except:
             logger.info("No auth token provided for details endpoints, skipping auth")
 
