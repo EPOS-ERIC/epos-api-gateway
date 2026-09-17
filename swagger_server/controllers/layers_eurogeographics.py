@@ -29,8 +29,6 @@ def layers_eurogeographics(type_):
                 content_type="application/json",
             )
 
-        token = token_base64
-
         domains = {
             "maps": "https://www.mapsforeurope.org/maps/wms",
             "pan-european-imagery": (
