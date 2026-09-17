@@ -9,25 +9,25 @@ logger = logging.getLogger(__name__)
 
 def layers_eurogeographics(type_):
     try:
-        token_base64 = os.getenv("EUROGEOGRAPHICS_TOKEN", "SW1WMWNtOW5aVzluY21Gd2FHbGpjMTl5WldkcGMzUmxjbVZrWHpneE1USTRPU0kuSFkwb3V3LlktelBJMmh5TTFLZmlvRE9CV1lIdHN6Sm9UVQ==")
+        token_base64 = os.getenv("EUROGEOGRAPHICS_TOKEN", "ImV1cm9nZW9ncmFwaGljc19yZWdpc3RlcmVkXzgxMTI4OSI.HY0ouw.Y-zPI2hyM1KfioDOBWYHtszJoTU")
 
-        if not token_base64:
-            logger.error("EUROGEOGRAPHICS_TOKEN is not configured")
-            return Response(
-                '{"error": "EuroGeographics token is not configured"}',
-                status=500,
-                content_type="application/json",
-            )
-
-        try:
-            token = base64.b64decode(token_base64).decode("utf-8")
-        except Exception:
-            logger.exception("Invalid base64 value in EUROGEOGRAPHICS_TOKEN")
-            return Response(
-                '{"error": "Invalid EuroGeographics token configuration"}',
-                status=500,
-                content_type="application/json",
-            )
+        #if not token_base64:
+        #    logger.error("EUROGEOGRAPHICS_TOKEN is not configured")
+        #    return Response(
+        #        '{"error": "EuroGeographics token is not configured"}',
+        #        status=500,
+        #        content_type="application/json",
+        #    )
+#
+        #try:
+        #    token = base64.b64decode(token_base64).decode("utf-8")
+        #except Exception:
+        #    logger.exception("Invalid base64 value in EUROGEOGRAPHICS_TOKEN")
+        #    return Response(
+        #        '{"error": "Invalid EuroGeographics token configuration"}',
+        #        status=500,
+        #        content_type="application/json",
+        #    )
 
         domains = {
             "maps": "https://www.mapsforeurope.org/maps/wms",
