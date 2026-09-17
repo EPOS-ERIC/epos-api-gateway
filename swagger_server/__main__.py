@@ -345,6 +345,7 @@ def load_configuration():
                 resources_api_setup[1],
             )
             conf_array.append(open("./swagger_server/swagger_downloaded/resources.yaml", "r", encoding="utf-8").read())
+            conf_array.append(open("./swagger_server/swagger_partial/layers_eurogeographics.yaml", "r", encoding="utf-8").read())
         except:
             logging.error("Error executing fetch of resource host")
             traceback.print_exc()

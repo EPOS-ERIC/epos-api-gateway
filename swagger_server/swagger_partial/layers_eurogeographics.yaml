@@ -1,0 +1,35 @@
+paths:
+  /layers/eurogeographics/{type}:
+    get:
+      description: Proxy requests to EuroGeographics WMS services
+      tags:
+        - Layers
+      summary: Proxy EuroGeographics WMS request
+      operationId: layers_eurogeographics
+      x-openapi-router-controller: swagger_server.controllers.layers_eurogeographics
+
+      parameters:
+        - name: type
+          in: path
+          required: true
+          schema:
+            type: string
+            enum:
+              - maps
+              - pan-european-imagery
+
+      responses:
+        '200':
+          description: WMS response successfully proxied
+
+        '400':
+          description: Invalid type
+
+        '502':
+          description: Error contacting upstream WMS service
+
+        '503':
+          description: Cannot connect to upstream WMS service
+
+        '504':
+          description: Upstream WMS service timeout
