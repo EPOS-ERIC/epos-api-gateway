@@ -7,7 +7,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-def layers_eurogeographics(type):
+def layers_eurogeographics(type_):
     try:
         token_base64 = os.getenv("EUROGEOGRAPHICS_TOKEN", "SW1WMWNtOW5aVzluY21Gd2FHbGpjMTl5WldkcGMzUmxjbVZrWHpneE1USTRPU0kuSFkwb3V3LlktelBJMmh5TTFLZmlvRE9CV1lIdHN6Sm9UVQ==")
 
@@ -37,7 +37,7 @@ def layers_eurogeographics(type):
             ),
         }
 
-        target_url = domains.get(type)
+        target_url = domains.get(type_)
 
         if not target_url:
             return Response(
